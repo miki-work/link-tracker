@@ -55,8 +55,62 @@ def track_click(short_url):
     conn.commit()
     cur.close()
     conn.close()
-
     return redirect(target_url)
+
+@app.route('/stats')
+def show_stats():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT id, ip_address, click_time FROM clicks ORDER BY click_time DESC")
+        records = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        # Формируем HTML-таблицу
+        html = """
+        <html>
+        <head>
+            <title>Статистика кликов</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; }
+                table { border-collapse: collapse; width: 100%; max-width: 800px; }
+                th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+                th { background-color: #f5f5f5; }
+                tr:nth-child(even) { background-color: #fafafa; }
+            </style>
+        </head>
+        <body>
+            <h1>📊 Статистика кликов</h1>
+            <p>Всего записей: {}</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>IP-адрес</th>
+                        <th>Время (UTC)</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """.format(len(records))
+
+        for row in records:
+            html += "<tr><td>{}</td><td>{}</td><td>{}</td></tr>".format(
+                row['id'], row['ip_address'], row['click_time']
+            )
+
+        html += """
+                </tbody>
+            </table>
+            <br>
+            <a href="/">← Вернуться</a>
+        </body>
+        </html>
+        """
+        return html
+
+    except Exception as e:
+        return f"<h2>Ошибка при загрузке статистики:</h2><pre>{e}</pre>"
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))

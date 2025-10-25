@@ -95,6 +95,16 @@ def show_stats():
     except Exception as e:
         return f"<h2>Ошибка при загрузке статистики:</h2><pre>{e}</pre>"
 
+@app.route('/')
+def home():
+    return '''
+    <h2>🔗 Link Tracker готов!</h2>
+    <p>Используй ссылку вида:</p>
+    <code>/любое_имя?to=https://любой.сайт</code>
+    <p>Пример: <a href="/demo?to=https://yandex.ru">/demo?to=https://yandex.ru</a></p>
+    <p><a href="/stats">📊 Посмотреть статистику</a></p>
+    '''
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)

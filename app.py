@@ -1,52 +1,52 @@
 from flask import Flask, request, redirect
 import os
 from datetime import datetime
-
-# Импорты для PostgreSQL
-try:
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-    USE_POSTGRES = True
-except ImportError:
-    USE_POSTGRES = False
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
 
-# === РАБОТА С БАЗОЙ ===
 def get_db_connection():
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
-        raise Exception("Переменная DATABASE_URL не задана")
+        raise Exception("❌ Переменная DATABASE_URL не задана")
+    # Railway требует sslmode=require
     return psycopg2.connect(database_url, sslmode='require')
 
-def init_db():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS clicks (
-            id SERIAL PRIMARY KEY,
-            ip_address TEXT NOT NULL,
-            click_time TIMESTAMP NOT NULL
-        )
-    ''')
-    conn.commit()
-    cur.close()
-    conn.close()
+def ensure_table_exists():
+    """Создаёт таблицу, если её нет. Безопасно вызывать много раз."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS clicks (
+                id SERIAL PRIMARY KEY,
+                ip_address TEXT NOT NULL,
+                click_time TIMESTAMP NOT NULL
+            )
+        ''')
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("✅ Таблица 'clicks' готова")
+    except Exception as e:
+        print(f"⚠️ Ошибка при создании таблицы: {e}")
 
-# === МАРШРУТЫ ===
+# Создаём таблицу при импорте (а не при первом запросе)
+ensure_table_exists()
+
 @app.route('/<short_url>')
 def track_click(short_url):
     target_url = request.args.get('to')
     if not target_url:
         return "Ошибка: нет параметра 'to'", 400
 
-    # Получаем реальный IP
+    # Получаем реальный IP через прокси Railway
     if request.headers.getlist("X-Forwarded-For"):
         user_ip = request.headers.getlist("X-Forwarded-For")[0].split(',')[0]
     else:
         user_ip = request.remote_addr
 
-    # Сохраняем в БД
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -57,8 +57,9 @@ def track_click(short_url):
         conn.commit()
         cur.close()
         conn.close()
+        print(f"✅ Записан IP: {user_ip}")
     except Exception as e:
-        print(f"Ошибка записи в БД: {e}")
+        print(f"❌ Ошибка записи: {e}")
 
     return redirect(target_url)
 
@@ -75,14 +76,16 @@ def show_stats():
         html = f"""
         <html><head><title>Клики</title>
         <style>
-            body {{ font-family: sans-serif; padding: 20px; }}
-            table {{ border-collapse: collapse; width: 100%; max-width: 800px; }}
-            th, td {{ border: 1px solid #ccc; padding: 10px; text-align: left; }}
-            th {{ background: #f0f0f0; }}
+            body {{ font-family: -apple-system, sans-serif; padding: 20px; background: #fff; }}
+            h2 {{ color: #333; }}
+            table {{ border-collapse: collapse; width: 100%; max-width: 800px; margin-top: 10px; }}
+            th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
+            th {{ background: #f8f9fa; }}
+            tr:nth-child(even) {{ background: #fcfcfc; }}
         </style></head><body>
-        <h2>Всего кликов: {len(records)}</h2>
+        <h2>📊 Статистика кликов (всего: {len(records)})</h2>
         <table>
-            <tr><th>ID</th><th>IP</th><th>Время (UTC)</th></tr>
+            <tr><th>ID</th><th>IP-адрес</th><th>Время (UTC)</th></tr>
         """
         for r in records:
             html += f"<tr><td>{r['id']}</td><td>{r['ip_address']}</td><td>{r['click_time']}</td></tr>"
@@ -90,14 +93,8 @@ def show_stats():
         return html
 
     except Exception as e:
-        return f"<h2>Ошибка:</h2><pre>{e}</pre>"
+        return f"<h2>Ошибка при загрузке статистики:</h2><pre>{e}</pre>"
 
-# === ЗАПУСК ===
 if __name__ == '__main__':
-    if USE_POSTGRES:
-        try:
-            init_db()
-        except Exception as e:
-            print(f"⚠️ БД не инициализирована: {e}")
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=False)
